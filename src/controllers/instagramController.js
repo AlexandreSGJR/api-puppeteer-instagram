@@ -1,20 +1,65 @@
-exports.get = async (req, res, next) => {
+const http = require('http');
+const https = require('https');
+var request = require('request');
 
+exports.get = async (req, resp, next) => {
+
+    let errorMessage = "Erro ao coletar os dados.";
     let isValid = false;
-    let message = "Erro ao coletar os dados.";
+
+    // let dataImages = [];
+
+    var options = {
+        hostname: 'localhost',
+        port: 8080,
+        path: '/tatuadores/conexao/instagram',
+        method: 'GET', // <--- aqui podes escolher o método
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        }
+    };
+
+    var req = http.request(options, (res) => {
+        res.setEncoding('utf8');
+        let usersActiveAccount = [];
+        res.on('data', d => usersActiveAccount = JSON.parse(d));
+        res.on('end', () => {
+            // console.log(usersActiveAccount.reverse());
+            dataImages = getPhotos(usersActiveAccount);
+        });
+    });
+    
+    req.on('error', (e) => {
+        console.log(`Houve um erro: ${e.message}`);
+    });
+    
+    // aqui podes enviar data no POST
+    // req.write(postData);
+    req.end();
+
+    //envia resposta
+    resp.send({
+        "Message": errorMessage,
+        "IsValid": isValid,
+    });
+};
+
+async function getPhotos(usersActiveAccount) {
 
     let instagramAccount = {
         username: 'alexandre_sgjr',
         password: 'xandy_bya'
-    } 
+    }
+
+    let usersImages = [];
 
     const puppeteer = require('puppeteer');
 
-    const browser = await puppeteer.launch({headless: false});
+    const browser = await puppeteer.launch({ headless: false });
     var page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36');
-            
-    await page.goto('https://www.instagram.com/rafanildsz/');
+
+    await page.goto('https://www.instagram.com/');
 
     await page.waitForSelector('input[name="username"]');
     await page.type('input[name="username"]', instagramAccount.username);
@@ -27,31 +72,65 @@ exports.get = async (req, res, next) => {
 
     await page.close();
     page = await browser.newPage();
-    await page.goto('https://www.instagram.com/rafanildsz/');
 
-    const imgList = await page.evaluate(() => {
-        // funcao executada no browser
+    for (let i = 0; i < usersActiveAccount.length; i++) {
+        let account = usersActiveAccount[i];
+        await page.goto(`https://www.instagram.com/${account}/`);
 
-        //pegar as imagens
-        const nodeList = document.querySelectorAll('article img');
-        // passar nodeList para array
-        const imgArray = [...nodeList];
+        await autoScroll(page);
 
-        //transformar os elementos em objetos js
-        const list = imgArray.map( ({ src }) => ({
-            src
-        }));
+        let imgList = await page.evaluate(() => {
+            // funcao executada no browser
 
-        return list;
-    });
 
+            //pegar as imagens
+            const nodeList = document.querySelectorAll('article img');
+            // passar nodeList para array
+            const imgArray = [...nodeList];
+
+            //transformar os elementos em objetos js
+            const list = imgArray.map(({ src }) => ({
+                src
+            }));
+
+            return list;
+        });
+
+        usersImages.push({
+            user: account,
+            images: imgList
+        });
+
+        
+    }
+
+    if (usersImages != null && usersImages != undefined && usersImages.length > 0) {
+        errorMessage = '';
+        isValid = true;
+    }
+    
     //fechar navegador
     await browser.close();
 
-    //envia resposta
-    res.send({
-        "Message": message,
-        "IsValid": isValid,
-        "Data": imgList,
-    });    
-};
+    return usersImages;
+}
+
+async function autoScroll(page) {
+    await page.evaluate(async () => {
+        await new Promise((resolve, reject) => {
+            var totalHeight = 0;
+            var distance = 100;
+            var timer = setInterval(() => {
+                var scrollHeight = document.body.scrollHeight;
+                window.scrollBy(0, distance);
+                totalHeight += distance;
+
+                if (totalHeight >= scrollHeight) {
+                    clearInterval(timer);
+                    resolve();
+                }
+            }, 100);
+        });
+    });
+}
+
